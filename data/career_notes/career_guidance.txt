@@ -1,0 +1,26 @@
+SMART HIRE CAREER GUIDANCE
+
+Resume Improvement:
+A strong resume should clearly present relevant technical skills, education,
+projects, internships, and work experience.
+
+Software Engineer Skills:
+Common skills include programming languages, data structures and algorithms,
+databases, version control, problem solving, and software development practices.
+
+Interview Preparation:
+Candidates should practice technical questions, coding problems, project
+explanations, and behavioral questions.
+
+Project Presentation:
+Candidates should be able to explain the problem, proposed solution,
+technologies used, implementation, challenges, and results of their projects.
+
+Job Matching:
+A candidate should compare their skills and experience with the requirements
+of a target job. Missing skills can be identified and prioritized for learning.
+
+Career Growth:
+Candidates can improve their employability by developing relevant technical
+skills, building practical projects, gaining internship experience, and
+continuously learning technologies relevant to their target role.

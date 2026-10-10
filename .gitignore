@@ -1,0 +1,12 @@
+venv/
+.env
+__pycache__/
+*.pyc
+vectorstore/
+.venv/
+.env.*
+!.env.example
+data/resumes/*
+!data/resumes/.gitkeep
+# Local job datasets — not uploaded to GitHub
+data/jobs/*.csv
