@@ -2,7 +2,9 @@ venv/
 .env
 __pycache__/
 *.pyc
-vectorstore/
+vectorstore/*
+!vectorstore/jobs.index
+!vectorstore/jobs_metadata.json
 .venv/
 .env.*
 !.env.example
