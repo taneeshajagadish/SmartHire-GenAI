@@ -9,3 +9,4 @@ python-docx
 python-dotenv
 pandas
 numpy
+sentence-transformers
