@@ -19,6 +19,15 @@ REQUIRED_COLUMNS = [
     "skills",
     "uniq_id",
 ]
+# Remove common website and recruiter-generated noise.
+NOISY_PHRASES = [
+    r"send me jobs like this",
+    r"download ppt",
+    r"view contact details",
+    r"view contact",
+    r"apply now",
+    r"walk.?in interview details",
+]
 
 
 def clean_text(value):
@@ -43,6 +52,15 @@ def clean_text(value):
         text,
     )
 
+    # Remove common recruiter-generated noise.
+    for phrase in NOISY_PHRASES:
+        text = re.sub(
+            phrase,
+            " ",
+            text,
+            flags=re.IGNORECASE,
+        )
+
     # Normalize repeated whitespace.
     text = " ".join(text.split())
 
@@ -50,15 +68,18 @@ def clean_text(value):
 
 
 def clean_jobs():
-    """Load the raw job dataset and create a cleaned copy."""
+    """Clean the job dataset and create semantic-search documents."""
 
     if not RAW_FILE.exists():
-        raise FileNotFoundError(f"Raw dataset not found: {RAW_FILE}")
+        raise FileNotFoundError(
+            f"Raw dataset not found: {RAW_FILE}"
+        )
 
     df = pd.read_csv(RAW_FILE)
 
     missing_columns = [
-        column for column in REQUIRED_COLUMNS
+        column
+        for column in REQUIRED_COLUMNS
         if column not in df.columns
     ]
 
@@ -67,8 +88,10 @@ def clean_jobs():
             f"Dataset is missing required columns: {missing_columns}"
         )
 
-    # Remove rows where the essential job information is unavailable.
-    df = df.dropna(subset=["jobtitle", "jobdescription"])
+    # Remove rows where essential job information is unavailable.
+    df = df.dropna(
+        subset=["jobtitle", "jobdescription"]
+    ).copy()
 
     # Clean text fields.
     text_columns = [
@@ -85,13 +108,18 @@ def clean_jobs():
     for column in text_columns:
         df[column] = df[column].apply(clean_text)
 
-    # Remove records with empty job descriptions after cleaning.
-    df = df[df["jobdescription"].str.len() > 0]
+    # Remove records with empty job descriptions.
+    df = df[
+        df["jobdescription"].str.len() > 0
+    ].copy()
 
-    # Remove exact duplicate jobs based on the unique job identifier.
-    df = df.drop_duplicates(subset=["uniq_id"])
+    # Remove duplicate records using the unique job identifier.
+    df = df.drop_duplicates(
+        subset=["uniq_id"]
+    ).copy()
 
-    # Create a standardized text document for semantic search.
+    # Build a structured document for semantic search.
+    # Keep job requirements and descriptions; exclude recruiter noise.
     df["job_document"] = (
         "Job Title: " + df["jobtitle"] +
         "\nCompany: " + df["company"] +
@@ -103,7 +131,15 @@ def clean_jobs():
         "\nJob Description: " + df["jobdescription"]
     )
 
-    df.to_csv(CLEAN_FILE, index=False)
+    CLEAN_FILE.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    df.to_csv(
+        CLEAN_FILE,
+        index=False,
+    )
 
     print("Job cleaning completed.")
     print(f"Cleaned records: {len(df)}")

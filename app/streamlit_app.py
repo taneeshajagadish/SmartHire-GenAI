@@ -1,4 +1,5 @@
 import sys
+import re
 import json
 import html
 import hashlib
@@ -12,6 +13,10 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import streamlit as st
 
+
+from src.generate.cv_suggestions import generate_cv_suggestions
+from src.mentor.rag_chain import ask_mentor
+
 from src.parsing.loader import load_resume
 from src.parsing.resume_parser import parse_resume
 from src.search.embed import embed_text
@@ -20,8 +25,6 @@ from src.search.job_search import (
     load_faiss_index,
     search_faiss,
 )
-from src.generate.cv_suggestions import generate_cv_suggestions
-from src.mentor.rag_chain import ask_mentor
 
 
 # ============================================================
@@ -839,30 +842,53 @@ for key, default in {
 # PERFORMANCE CACHE
 # ============================================================
 
+
 @st.cache_resource(show_spinner=False)
 def get_faiss_store():
+    """Load and reuse the FAISS index and metadata."""
     return load_faiss_index()
+
+
+
+@st.cache_resource(show_spinner=False)
+def get_embedding_model():
+    """Load the sentence-transformer model once per Streamlit process."""
+    from src.search.embed import get_model
+
+    return get_model()
 
 
 @st.cache_data(show_spinner=False)
 def parse_resume_cached(resume_text: str):
+    """Cache structured resume parsing."""
     return parse_resume(resume_text)
 
 
 @st.cache_data(show_spinner=False)
 def embed_candidate_cached(candidate_text: str):
-    return embed_text(candidate_text)
+    """Create a normalized candidate embedding and cache the result."""
+    import numpy as np
 
+    model = get_embedding_model()
 
-@st.cache_data(show_spinner=False)
-def search_jobs_cached(candidate_embedding):
+    embeddings = model.encode(
+        [candidate_text],
+        normalize_embeddings=True,
+        convert_to_numpy=True,
+        show_progress_bar=False,
+    )
+
+    return embeddings[0].astype(np.float32).tolist()
+
+@st.cache_data(show_spinner=False, ttl=1)
+def search_jobs_cached(candidate_embedding, candidate_text):
     index, metadata = get_faiss_store()
-
     return search_faiss(
         index,
         candidate_embedding,
         metadata,
         top_k=10,
+        candidate_profile_text=candidate_text,
     )
 
 
@@ -871,6 +897,7 @@ def generate_cv_suggestions_cached(
     profile_json: str,
     job_json: str,
 ):
+    """Cache AI-generated CV improvement suggestions."""
     return generate_cv_suggestions(
         json.loads(profile_json),
         json.loads(job_json),
@@ -879,9 +906,8 @@ def generate_cv_suggestions_cached(
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def ask_mentor_cached(question: str):
+    """Cache career mentor responses for one hour."""
     return ask_mentor(question)
-
-
 # ============================================================
 # SIDEBAR
 # ============================================================
@@ -1180,9 +1206,11 @@ if uploaded_file is not None:
 
                     job_matches = (
                         search_jobs_cached(
-                            candidate_embedding
+                            candidate_embedding,
+                            candidate_text,
                         )
                     )
+                    st.write("DEBUG — Jobs returned:", len(job_matches))
 
 
                     st.session_state.resume_text = (
@@ -1514,8 +1542,8 @@ if st.session_state.job_matches:
                 </div>
 
                 <div class="match-big">
-                    {len(st.session_state.job_matches)}
-                    opportunities
+                    {min(len(st.session_state.job_matches), 10)}
+                     opportunities
                 </div>
 
                 <div class="match-small">
@@ -1568,8 +1596,11 @@ if st.session_state.job_matches:
         # Keep score as fallback for compatibility.
 
         score = job.get(
-            "similarity_score",
-            job.get("score", 0),
+            "ranking_score",
+            job.get(
+                "similarity_score",
+                job.get("score", 0),
+            ),
         )
 
 
@@ -1612,15 +1643,24 @@ if st.session_state.job_matches:
                     </div>
 
 
-                    <div style="text-align:right">
+                    
+                        <div style="text-align:right">
 
-                        <div class="status-label">
-                            Similarity
+                            <div class="status-label">
+                                Match Score
                         </div>
 
+
+                        
                         <div class="score">
-                            {html.escape(score_display)}
+                             <div class="score">
+                                {html.escape(score_display)}
+                            </div>
+                            <div class="status-label">
+                                 Experience: {html.escape(str(job.get("experience_requirement", "Not specified in job data")))}
+                            </div>
                         </div>
+
 
                     </div>
 
@@ -1637,6 +1677,143 @@ if st.session_state.job_matches:
             or job.get("job_document")
             or ""
         )
+        
+        
+        with st.expander("✦ Match insights", expanded=False):
+            insight_cols = st.columns(2)
+
+            role_score = float(job.get("role_match_score") or 0)
+            skill_score = float(job.get("skill_match_score") or 0)
+
+            with insight_cols[0]:
+                st.metric("Role fit", f"{role_score:.0%}")
+
+            with insight_cols[1]:
+                st.metric("Skill overlap", f"{skill_score:.0%}")
+
+            requirement = str(
+                job.get(
+                    "experience_requirement",
+                    "Not specified in job data",
+                )
+            )
+
+            candidate_level = str(
+                job.get("candidate_experience_level", "unknown")
+            ).lower()
+
+            job_level = str(
+                job.get("job_experience_level", "unknown")
+            ).lower()
+
+            requirement_lower = requirement.lower()
+
+            
+            # Assess experience suitability using the job's actual requirement.
+            range_match = re.search(
+                r"(\d{1,2})\s*(?:-|–|—|to)\s*(\d{1,2})\s*years?",
+                requirement_lower,
+            )
+
+            if "senior/lead role" in requirement_lower:
+                if candidate_level == "entry":
+                    fit_label = "Experience gap — senior/lead role"
+                elif candidate_level == "mid":
+                    fit_label = "Potential experience gap — senior/lead role"
+                elif candidate_level == "senior":
+                    fit_label = "Potentially aligned — verify requirements"
+                else:
+                    fit_label = "Seniority cannot be determined"
+
+            elif "not specified" in requirement_lower:
+                fit_label = "Experience requirement not specified"
+
+            elif range_match:
+                minimum_years = int(range_match.group(1))
+                maximum_years = int(range_match.group(2))
+
+                if minimum_years > maximum_years:
+                    fit_label = "Invalid experience range in job data"
+
+                elif candidate_level == "entry":
+                    if minimum_years == 0:
+                        fit_label = (
+                            "Potentially suitable for entry-level candidates"
+                        )
+                    elif minimum_years == 1:
+                        fit_label = (
+                            "Possible opportunity — check experience requirement"
+                        )
+                    else:
+                        fit_label = (
+                            "Experience gap — prior experience requested"
+                        )
+
+                elif candidate_level == "mid":
+                    if minimum_years <= 2 and maximum_years >= 2:
+                        fit_label = (
+                            "Potentially aligned — verify actual experience"
+                        )
+                    elif minimum_years > 2:
+                        fit_label = "Potential experience gap"
+                    else:
+                        fit_label = "Review experience requirements"
+
+                elif candidate_level == "senior":
+                    if maximum_years <= 2:
+                        fit_label = "Potentially below experience level"
+                    elif minimum_years >= 3:
+                        fit_label = (
+                            "Potentially aligned — verify actual experience"
+                        )
+                    else:
+                        fit_label = "Review experience requirements"
+
+                else:
+                    fit_label = "Candidate experience level unknown"
+
+            elif candidate_level == "entry" and job_level == "entry":
+                fit_label = "Potentially aligned with entry-level profile"
+
+            elif candidate_level == "senior" and job_level == "senior":
+                fit_label = (
+                    "Seniority appears aligned — verify requirements"
+                )
+
+            else:
+                fit_label = "Review experience requirements"
+
+
+            st.markdown("**Experience suitability**")
+            st.markdown(
+                f"""
+                <div class="match-insight">
+                    <div class="match-insight-label">EXPERIENCE FIT</div>
+                    <div class="match-insight-title">
+                        {html.escape(fit_label)}
+                    </div>
+                    <div class="match-insight-note">
+                        Listed requirement: {html.escape(requirement)}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            matched_skills = job.get("matched_skills") or []
+
+            st.markdown("**Matching skills**")
+            if matched_skills:
+                st.write(
+                    " · ".join(str(skill) for skill in matched_skills)
+                )
+            else:
+                st.caption("No matching skills identified.")
+
+            st.caption(
+                f"Candidate level: {candidate_level.title()} "
+                f"· Job level: {job_level.title()}"
+            )
 
 
         with st.expander(

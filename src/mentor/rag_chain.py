@@ -28,7 +28,6 @@ if not GEMINI_API_KEY:
         "GEMINI_API_KEY is not set in the .env file."
     )
 
-
 JOBS_FILE = Path("data/jobs/cleaned_jobs.csv")
 CAREER_NOTES_FILE = Path(
     "data/career_notes/career_guidance.txt"
@@ -39,23 +38,18 @@ VECTORSTORE_DIR = Path("vectorstore")
 JOB_EMBEDDINGS_FILE = (
     VECTORSTORE_DIR / "job_embeddings.npy"
 )
-
 JOB_METADATA_FILE = (
     VECTORSTORE_DIR / "job_embedding_metadata.json"
 )
-
 JOB_INDEX_FILE = (
     VECTORSTORE_DIR / "jobs.index"
 )
-
 JOB_FAISS_METADATA_FILE = (
     VECTORSTORE_DIR / "jobs_metadata.json"
 )
-
 CAREER_INDEX_FILE = (
     VECTORSTORE_DIR / "career_guidance.index"
 )
-
 CAREER_METADATA_FILE = (
     VECTORSTORE_DIR / "career_guidance_metadata.json"
 )
@@ -66,9 +60,7 @@ CAREER_METADATA_FILE = (
 # ============================================================
 
 def load_career_notes() -> list[Document]:
-    """
-    Load career guidance notes as LangChain documents.
-    """
+    """Load career guidance notes as LangChain documents."""
 
     if not CAREER_NOTES_FILE.exists():
         raise FileNotFoundError(
@@ -100,10 +92,7 @@ def load_career_notes() -> list[Document]:
 # ============================================================
 
 def load_job_documents() -> list[Document]:
-    """
-    Load cleaned job records and convert them
-    into LangChain Documents.
-    """
+    """Load cleaned job records and convert them into Documents."""
 
     if not JOBS_FILE.exists():
         raise FileNotFoundError(
@@ -121,24 +110,15 @@ def load_job_documents() -> list[Document]:
     documents = []
 
     for _, row in df.iterrows():
-
         documents.append(
             Document(
-                page_content=str(
-                    row["job_document"]
-                ),
+                page_content=str(row["job_document"]),
                 metadata={
                     "source": "cleaned_jobs.csv",
                     "type": "job",
-                    "jobid": str(
-                        row.get("jobid", "")
-                    ),
-                    "jobtitle": str(
-                        row.get("jobtitle", "")
-                    ),
-                    "company": str(
-                        row.get("company", "")
-                    )
+                    "jobid": str(row.get("jobid", "")),
+                    "jobtitle": str(row.get("jobtitle", "")),
+                    "company": str(row.get("company", ""))
                 }
             )
         )
@@ -153,10 +133,7 @@ def load_job_documents() -> list[Document]:
 def chunk_documents(
     documents: list[Document]
 ) -> list[Document]:
-    """
-    Split documents into smaller chunks
-    for retrieval.
-    """
+    """Split documents into smaller chunks for retrieval."""
 
     if not documents:
         raise ValueError(
@@ -176,22 +153,16 @@ def chunk_documents(
 # ============================================================
 
 def build_mentor_index() -> None:
-    """
-    Build a combined FAISS index containing:
-    - Job corpus embeddings
-    - Career guidance embeddings
-    """
+    """Build a combined FAISS index for jobs and career guidance."""
 
     if not JOB_EMBEDDINGS_FILE.exists():
         raise FileNotFoundError(
-            f"Job embeddings not found: "
-            f"{JOB_EMBEDDINGS_FILE}"
+            f"Job embeddings not found: {JOB_EMBEDDINGS_FILE}"
         )
 
     if not JOB_METADATA_FILE.exists():
         raise FileNotFoundError(
-            f"Job embedding metadata not found: "
-            f"{JOB_METADATA_FILE}"
+            f"Job embedding metadata not found: {JOB_METADATA_FILE}"
         )
 
     job_embeddings = np.load(
@@ -203,14 +174,10 @@ def build_mentor_index() -> None:
         "r",
         encoding="utf-8"
     ) as file:
-
         job_metadata = json.load(file)
 
     career_documents = load_career_notes()
-
-    career_chunks = chunk_documents(
-        career_documents
-    )
+    career_chunks = chunk_documents(career_documents)
 
     career_texts = [
         document.page_content
@@ -223,43 +190,31 @@ def build_mentor_index() -> None:
     )
 
     all_embeddings = np.vstack(
-        [
-            job_embeddings,
-            career_embeddings
-        ]
+        [job_embeddings, career_embeddings]
     )
 
     faiss.normalize_L2(all_embeddings)
 
     dimension = all_embeddings.shape[1]
-
     index = faiss.IndexFlatIP(dimension)
-
     index.add(all_embeddings)
 
-    metadata = []
-
-    for item in job_metadata:
-        metadata.append(item)
+    metadata = list(job_metadata)
 
     for chunk_number, document in enumerate(
         career_chunks,
         start=1
     ):
-
-        metadata.append(
-            {
-                "source": "career_guidance.txt",
-                "type": "career_notes",
-                "chunk": chunk_number,
-                "content": document.page_content
-            }
-        )
+        metadata.append({
+            "source": "career_guidance.txt",
+            "type": "career_notes",
+            "chunk": chunk_number,
+            "content": document.page_content
+        })
 
     if index.ntotal != len(metadata):
         raise ValueError(
-            "FAISS index size does not match "
-            "metadata size."
+            "FAISS index size does not match metadata size."
         )
 
     VECTORSTORE_DIR.mkdir(
@@ -277,7 +232,6 @@ def build_mentor_index() -> None:
         "w",
         encoding="utf-8"
     ) as file:
-
         json.dump(
             metadata,
             file,
@@ -296,15 +250,10 @@ def build_mentor_index() -> None:
 # ============================================================
 
 def build_career_guidance_index() -> None:
-    """
-    Build a dedicated FAISS index for career guidance notes.
-    """
+    """Build a dedicated FAISS index for career guidance notes."""
 
     career_documents = load_career_notes()
-
-    career_chunks = chunk_documents(
-        career_documents
-    )
+    career_chunks = chunk_documents(career_documents)
 
     if not career_chunks:
         raise ValueError(
@@ -324,9 +273,7 @@ def build_career_guidance_index() -> None:
     faiss.normalize_L2(career_embeddings)
 
     dimension = career_embeddings.shape[1]
-
     index = faiss.IndexFlatIP(dimension)
-
     index.add(career_embeddings)
 
     metadata = []
@@ -335,15 +282,12 @@ def build_career_guidance_index() -> None:
         career_chunks,
         start=1
     ):
-
-        metadata.append(
-            {
-                "source": "career_guidance.txt",
-                "type": "career_notes",
-                "chunk": chunk_number,
-                "content": document.page_content
-            }
-        )
+        metadata.append({
+            "source": "career_guidance.txt",
+            "type": "career_notes",
+            "chunk": chunk_number,
+            "content": document.page_content
+        })
 
     VECTORSTORE_DIR.mkdir(
         parents=True,
@@ -360,7 +304,6 @@ def build_career_guidance_index() -> None:
         "w",
         encoding="utf-8"
     ) as file:
-
         json.dump(
             metadata,
             file,
@@ -369,24 +312,19 @@ def build_career_guidance_index() -> None:
         )
 
     print(
-        f"Career guidance FAISS index built successfully: "
+        f"Career guidance index built successfully: "
         f"{index.ntotal} vectors"
     )
-
-
-# ============================================================
+    # ============================================================
 # LOAD CAREER GUIDANCE INDEX
 # ============================================================
 
 def load_career_guidance_index():
-    """
-    Load the dedicated career guidance FAISS index.
-    """
+    """Load the dedicated career guidance FAISS index."""
 
     if not CAREER_INDEX_FILE.exists():
         raise FileNotFoundError(
-            f"Career guidance index not found: "
-            f"{CAREER_INDEX_FILE}"
+            f"Career guidance index not found: {CAREER_INDEX_FILE}"
         )
 
     if not CAREER_METADATA_FILE.exists():
@@ -404,7 +342,6 @@ def load_career_guidance_index():
         "r",
         encoding="utf-8"
     ) as file:
-
         metadata = json.load(file)
 
     return index, metadata
@@ -415,14 +352,11 @@ def load_career_guidance_index():
 # ============================================================
 
 def load_job_index():
-    """
-    Load the job FAISS index and metadata.
-    """
+    """Load the job FAISS index and metadata."""
 
     if not JOB_INDEX_FILE.exists():
         raise FileNotFoundError(
-            f"Job FAISS index not found: "
-            f"{JOB_INDEX_FILE}"
+            f"Job FAISS index not found: {JOB_INDEX_FILE}"
         )
 
     if not JOB_FAISS_METADATA_FILE.exists():
@@ -440,7 +374,6 @@ def load_job_index():
         "r",
         encoding="utf-8"
     ) as file:
-
         metadata = json.load(file)
 
     return index, metadata
@@ -454,36 +387,23 @@ def retrieve_career_guidance(
     question: str,
     top_k: int = 2
 ) -> list[dict]:
-    """
-    Retrieve relevant career guidance chunks.
-    """
+    """Retrieve relevant career guidance chunks."""
 
     if not question.strip():
-        raise ValueError(
-            "Question cannot be empty."
-        )
+        raise ValueError("Question cannot be empty.")
 
-    index, metadata = (
-        load_career_guidance_index()
-    )
+    index, metadata = load_career_guidance_index()
 
-    query_embedding = embed_text(
-        question
-    )
+    query_embedding = embed_text(question)
 
     query_vector = np.asarray(
         [query_embedding],
         dtype=np.float32
     )
 
-    faiss.normalize_L2(
-        query_vector
-    )
+    faiss.normalize_L2(query_vector)
 
-    k = min(
-        top_k,
-        index.ntotal
-    )
+    k = min(top_k, index.ntotal)
 
     scores, indices = index.search(
         query_vector,
@@ -492,18 +412,12 @@ def retrieve_career_guidance(
 
     results = []
 
-    for score, index_id in zip(
-        scores[0],
-        indices[0]
-    ):
-
+    for score, index_id in zip(scores[0], indices[0]):
         if index_id < 0:
             continue
 
         item = metadata[index_id].copy()
-
         item["score"] = float(score)
-
         results.append(item)
 
     return results
@@ -517,34 +431,23 @@ def retrieve_jobs(
     question: str,
     top_k: int = 3
 ) -> list[dict]:
-    """
-    Retrieve relevant jobs from the job FAISS index.
-    """
+    """Retrieve relevant jobs from the job FAISS index."""
 
     if not question.strip():
-        raise ValueError(
-            "Question cannot be empty."
-        )
+        raise ValueError("Question cannot be empty.")
 
     index, metadata = load_job_index()
 
-    query_embedding = embed_text(
-        question
-    )
+    query_embedding = embed_text(question)
 
     query_vector = np.asarray(
         [query_embedding],
         dtype=np.float32
     )
 
-    faiss.normalize_L2(
-        query_vector
-    )
+    faiss.normalize_L2(query_vector)
 
-    k = min(
-        top_k,
-        index.ntotal
-    )
+    k = min(top_k, index.ntotal)
 
     scores, indices = index.search(
         query_vector,
@@ -553,18 +456,12 @@ def retrieve_jobs(
 
     results = []
 
-    for score, index_id in zip(
-        scores[0],
-        indices[0]
-    ):
-
+    for score, index_id in zip(scores[0], indices[0]):
         if index_id < 0:
             continue
 
         item = metadata[index_id].copy()
-
         item["score"] = float(score)
-
         results.append(item)
 
     return results
@@ -578,38 +475,20 @@ def build_rag_context(
     career_results: list[dict],
     job_results: list[dict]
 ) -> str:
-    """
-    Combine retrieved career guidance and job information
-    into grounded context for the mentor LLM.
-    """
+    """Combine retrieved career guidance and job information."""
 
     context_parts = []
 
-    # Career guidance
     for result in career_results:
-
         context_parts.append(
             "SOURCE: CAREER GUIDANCE\n"
             f"{result.get('content', '')}"
         )
 
-    # Job postings
     for result in job_results:
-
-        job_title = result.get(
-            "jobtitle",
-            ""
-        )
-
-        company = result.get(
-            "company",
-            ""
-        )
-
-        content = result.get(
-            "content",
-            ""
-        )
+        job_title = result.get("jobtitle", "")
+        company = result.get("company", "")
+        content = result.get("content", "")
 
         context_parts.append(
             "SOURCE: JOB POSTING\n"
@@ -618,11 +497,7 @@ def build_rag_context(
             f"{content}"
         )
 
-    return "\n\n---\n\n".join(
-        context_parts
-    )
-
-
+    return "\n\n---\n\n".join(context_parts)
 # ============================================================
 # MENTOR PROMPT
 # ============================================================
@@ -664,9 +539,7 @@ User Question:
 # ============================================================
 
 def create_mentor_llm():
-    """
-    Create the LangChain Gemini chat model.
-    """
+    """Create the LangChain Gemini chat model."""
 
     return ChatGoogleGenerativeAI(
         model="gemini-3.1-flash-lite",
@@ -683,30 +556,19 @@ def generate_mentor_answer(
     question: str,
     context: str
 ) -> str:
-    """
-    Generate a grounded career mentor response
-    using LangChain + Gemini.
-    """
+    """Generate a grounded career mentor response."""
 
     if not isinstance(question, str):
-        raise ValueError(
-            "Question must be a string."
-        )
+        raise ValueError("Question must be a string.")
 
     if not question.strip():
-        raise ValueError(
-            "Question cannot be empty."
-        )
+        raise ValueError("Question cannot be empty.")
 
     if not isinstance(context, str):
-        raise ValueError(
-            "Context must be a string."
-        )
+        raise ValueError("Context must be a string.")
 
     if not context.strip():
-        raise ValueError(
-            "Context cannot be empty."
-        )
+        raise ValueError("Context cannot be empty.")
 
     prompt = MENTOR_PROMPT.format(
         context=context,
@@ -714,44 +576,20 @@ def generate_mentor_answer(
     )
 
     llm = create_mentor_llm()
-
     response = llm.invoke(prompt)
 
-    # Gemini/LangChain can return either:
-    # 1. A normal string
-    # 2. A list of content blocks
-
-    if isinstance(
-        response.content,
-        list
-    ):
-
+    if isinstance(response.content, list):
         text_parts = []
 
         for item in response.content:
-
-            if isinstance(
-                item,
-                dict
-            ):
-
-                text = item.get(
-                    "text",
-                    ""
-                )
-
+            if isinstance(item, dict):
+                text = item.get("text", "")
                 if text:
-                    text_parts.append(
-                        text
-                    )
+                    text_parts.append(text)
 
-        return "".join(
-            text_parts
-        ).strip()
+        return "".join(text_parts).strip()
 
-    return str(
-        response.content
-    ).strip()
+    return str(response.content).strip()
 
 
 # ============================================================
@@ -764,58 +602,36 @@ def ask_mentor(
     job_top_k: int = 3
 ) -> str:
     """
-    Complete SmartHire AI Career Mentor pipeline.
-
-    User Question
-          ↓
-    Guardrails
-          ↓
-    Query Embedding
-          ↓
-    FAISS Retrieval
-          ↓
-    Career Guidance + Job Context
-          ↓
-    LangChain Gemini
-          ↓
-    Grounded Answer
+    Complete SmartHire AI Career Mentor pipeline with guardrails
+    and basic relevance filtering.
     """
 
-    # --------------------------------------------------------
-    # STEP 1: GUARDRAILS
-    # --------------------------------------------------------
-
-    allowed, validated_question = (
-        check_user_input(question)
-    )
+    # STEP 1: Validate user input
+    allowed, validated_question = check_user_input(question)
 
     if not allowed:
         return validated_question
 
-    # --------------------------------------------------------
-    # STEP 2: RETRIEVE CAREER GUIDANCE
-    # --------------------------------------------------------
-
-    career_results = (
-        retrieve_career_guidance(
-            validated_question,
-            top_k=career_top_k
-        )
+    # STEP 2: Retrieve career guidance
+    career_results = retrieve_career_guidance(
+        validated_question,
+        top_k=career_top_k
     )
 
-    # --------------------------------------------------------
-    # STEP 3: RETRIEVE JOBS
-    # --------------------------------------------------------
-
+    # STEP 3: Retrieve jobs relevant to the question
     job_results = retrieve_jobs(
         validated_question,
         top_k=job_top_k
     )
 
-    # --------------------------------------------------------
-    # STEP 4: BUILD GROUNDED CONTEXT
-    # --------------------------------------------------------
+    # STEP 4: Filter very weak job matches.
+    # Treat 0.35 as an initial threshold, not a calibrated relevance score.
+    job_results = [
+        job for job in job_results
+        if float(job.get("score", 0.0)) >= 0.35
+    ]
 
+    # STEP 5: Build grounded context
     context = build_rag_context(
         career_results,
         job_results
@@ -823,14 +639,12 @@ def ask_mentor(
 
     if not context.strip():
         return (
-            "I don't have enough information in the "
-            "SmartHire knowledge base to answer that."
+            "I don't have enough relevant information in the "
+            "SmartHire knowledge base to answer that. Try asking "
+            "about a specific skill, resume section, or career goal."
         )
 
-    # --------------------------------------------------------
-    # STEP 5: GENERATE GROUNDED ANSWER
-    # --------------------------------------------------------
-
+    # STEP 6: Generate a grounded answer
     return generate_mentor_answer(
         validated_question,
         context
